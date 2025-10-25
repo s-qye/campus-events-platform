@@ -458,7 +458,171 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                       const percentage = (count / events.length) * 100;
                       return (
                         <div key={cat}>
-                          <div className="flex justify-between items-start mb-4">
+                          <div className="flex justify-between text-sm mb-1">
+                            <span>{cat}</span>
+                            <span>{count} events</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2">
+                            <div
+                              className="bg-indigo-600 h-2 rounded-full"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Upload Modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Add New Event</h2>
+              <button onClick={() => setShowUpload(false)}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setUploadMethod('manual')}
+                className={`flex-1 py-2 rounded-lg transition-colors ${uploadMethod === 'manual' ? 'bg-indigo-600 text-white' : 'bg-slate-100'}`}
+              >
+                Manual Entry
+              </button>
+              <button
+                onClick={() => setUploadMethod('scan')}
+                className={`flex-1 py-2 rounded-lg transition-colors ${uploadMethod === 'scan' ? 'bg-indigo-600 text-white' : 'bg-slate-100'}`}
+              >
+                Scan Flyer
+              </button>
+            </div>
+
+            {uploadMethod === 'scan' && (
+              <div className="mb-4 p-6 border-2 border-dashed rounded-lg text-center">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  id="flyer-upload"
+                  disabled={scanning}
+                />
+                <label htmlFor="flyer-upload" className="cursor-pointer">
+                  <Upload className="w-12 h-12 mx-auto mb-2 text-slate-400" />
+                  <p className="text-sm text-slate-600">
+                    {scanning ? 'Scanning flyer...' : 'Click to upload a flyer image'}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">AI will extract event details automatically</p>
+                </label>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Event Title *</label>
+                <input
+                  type="text"
+                  value={newEvent.title}
+                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Event name"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Date *</label>
+                  <input
+                    type="date"
+                    value={newEvent.date}
+                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Time</label>
+                  <input
+                    type="time"
+                    value={newEvent.time}
+                    onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Location</label>
+                <input
+                  type="text"
+                  value={newEvent.location}
+                  onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Venue or building"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Category</label>
+                  <select
+                    value={newEvent.category}
+                    onChange={(e) => setNewEvent({ ...newEvent, category: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Eligibility</label>
+                  <select
+                    value={newEvent.eligibility}
+                    onChange={(e) => setNewEvent({ ...newEvent, eligibility: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    {eligibilityOptions.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Description</label>
+                <textarea
+                  value={newEvent.description}
+                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  rows="3"
+                  placeholder="Brief description of the event"
+                />
+              </div>
+
+              <button
+                onClick={handleSubmitEvent}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+              >
+                Submit Event
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event Detail Modal */}
+      {selectedEvent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-lg w-full p-6">
+            <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-2">
                 {getVerificationIcon(selectedEvent.verification)}
                 <h2 className="text-xl font-semibold">{selectedEvent.title}</h2>
