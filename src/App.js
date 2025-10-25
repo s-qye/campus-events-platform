@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calendar, Filter, Upload, Clock, MapPin, Users, TrendingUp, Flag, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Calendar, Filter, Upload, Clock, MapPin, Users, TrendingUp, Flag, X, CheckCircle, AlertCircle, LogIn, Trash2, Shield, FileImage } from 'lucide-react';
 
 const categories = ['Cultural', 'Professional', 'Academic', 'Social', 'Sports', 'Service', 'Arts'];
 const verificationTypes = ['Official', 'Student Posted', 'Community'];
@@ -18,7 +18,10 @@ const EventDiscoveryPlatform = () => {
       verification: 'Official',
       eligibility: 'All Students',
       description: 'Celebrate diverse cultures through food from around the world',
-      flags: 0
+      flags: 0,
+      createdBy: 'admin',
+      accountType: 'club',
+      flyerUrl: null
     },
     {
       id: 2,
@@ -30,7 +33,10 @@ const EventDiscoveryPlatform = () => {
       verification: 'Official',
       eligibility: 'All Students',
       description: 'Meet recruiters from top tech companies',
-      flags: 0
+      flags: 0,
+      createdBy: 'admin',
+      accountType: 'club',
+      flyerUrl: null
     },
     {
       id: 3,
@@ -42,15 +48,34 @@ const EventDiscoveryPlatform = () => {
       verification: 'Student Posted',
       eligibility: 'All Students',
       description: 'Showcase your talent - music, poetry, comedy welcome',
-      flags: 0
+      flags: 0,
+      createdBy: 'student1',
+      accountType: 'user',
+      flyerUrl: null
     }
   ]);
+  
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
+  const [accountType, setAccountType] = useState('user');
+  
+  const [users, setUsers] = useState([
+    { username: 'admin', password: 'admin123', email: 'admin@example.com', type: 'club', clubName: 'Student Activities', verified: true },
+    { username: 'student1', password: 'student123', email: 'student1@example.com', type: 'user', verified: false }
+  ]);
+  
+  const [authForm, setAuthForm] = useState({
+    username: '',
+    password: '',
+    email: '',
+    clubName: ''
+  });
   
   const [filters, setFilters] = useState({
     categories: [],
     verification: [],
-    eligibility: [],
-    dateRange: 'all'
+    eligibility: []
   });
   
   const [showUpload, setShowUpload] = useState(false);
@@ -58,6 +83,8 @@ const EventDiscoveryPlatform = () => {
   const [uploadMethod, setUploadMethod] = useState('manual');
   const [scanning, setScanning] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [uploadedImageData, setUploadedImageData] = useState(null);
   
   const [newEvent, setNewEvent] = useState({
     title: '',
@@ -70,9 +97,67 @@ const EventDiscoveryPlatform = () => {
     description: ''
   });
 
+  const handleLogin = () => {
+    const user = users.find(u => 
+      u.username === authForm.username && 
+      u.password === authForm.password
+    );
+    
+    if (user) {
+      setCurrentUser(user);
+      setShowAuth(false);
+      setAuthForm({ username: '', password: '', email: '', clubName: '' });
+      alert(`Welcome back, ${user.username}!`);
+    } else {
+      alert('Invalid credentials');
+    }
+  };
+
+  const handleSignup = () => {
+    if (!authForm.username || !authForm.password || !authForm.email) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    
+    if (accountType === 'club' && !authForm.clubName) {
+      alert('Please enter your club name');
+      return;
+    }
+    
+    if (users.find(u => u.username === authForm.username)) {
+      alert('Username already exists');
+      return;
+    }
+    
+    const newUser = {
+      username: authForm.username,
+      password: authForm.password,
+      email: authForm.email,
+      type: accountType,
+      clubName: accountType === 'club' ? authForm.clubName : null,
+      verified: false
+    };
+    
+    setUsers([...users, newUser]);
+    setCurrentUser(newUser);
+    setShowAuth(false);
+    setAuthForm({ username: '', password: '', email: '', clubName: '' });
+    alert(`Account created successfully! Welcome, ${newUser.username}!`);
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+    alert('Logged out successfully');
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    
+    if (!currentUser) {
+      alert('Please log in to upload events');
+      return;
+    }
     
     setScanning(true);
     
@@ -84,6 +169,10 @@ const EventDiscoveryPlatform = () => {
         reader.readAsDataURL(file);
       });
 
+      setUploadedImageData(`data:${file.type};base64,${base64}`);
+      const imageUrl = URL.createObjectURL(file);
+      setUploadedImage(imageUrl);
+
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -91,7 +180,7 @@ const EventDiscoveryPlatform = () => {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
+          max_tokens: 2000,
           messages: [{
             role: 'user',
             content: [
@@ -105,16 +194,25 @@ const EventDiscoveryPlatform = () => {
               },
               {
                 type: 'text',
-                text: `Extract event information from this flyer. Return ONLY a JSON object with these fields:
+                text: `Analyze this image and determine if it appears to be an event flyer or poster.
+
+If this is NOT an event flyer/poster, respond with ONLY: {"error": "not_event"}
+
+If it IS an event flyer, extract the event information and return ONLY a JSON object with this exact format:
 {
-  "title": "event name",
+  "title": "event name from the flyer",
   "date": "YYYY-MM-DD format",
-  "time": "HH:MM 24-hour format",
-  "location": "venue",
-  "description": "brief description",
+  "time": "HH:MM in 24-hour format",
+  "location": "venue or location",
+  "description": "brief description of the event",
   "category": "one of: Cultural, Professional, Academic, Social, Sports, Service, Arts"
 }
-If any field cannot be determined, use "TBD" for text fields or today's date for date.`
+
+Important:
+- If you cannot read the image clearly, respond with: {"error": "unreadable"}
+- If any specific field cannot be determined, use "TBD" for that field
+- Make your best estimate for the category based on the event type
+- Do not include any explanation, only return the JSON object`
               }
             ]
           }]
@@ -124,25 +222,60 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
       const data = await response.json();
       const text = data.content.find(c => c.type === 'text')?.text || '';
       const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
-      const extracted = JSON.parse(cleanText);
+      
+      let extracted;
+      try {
+        extracted = JSON.parse(cleanText);
+      } catch (e) {
+        throw new Error('Failed to parse API response');
+      }
+      
+      if (extracted.error === 'not_event') {
+        alert('Error: This image does not appear to be an event flyer. Please upload a valid event poster.');
+        setUploadedImage(null);
+        setUploadedImageData(null);
+        setScanning(false);
+        return;
+      }
+      
+      if (extracted.error === 'unreadable') {
+        alert('Error: The uploaded image cannot be read clearly. Please upload a clearer image or enter the details manually.');
+        setUploadedImage(null);
+        setUploadedImageData(null);
+        setScanning(false);
+        return;
+      }
       
       setNewEvent({
         ...newEvent,
-        ...extracted,
-        verification: 'Student Posted',
+        title: extracted.title || '',
+        date: extracted.date || '',
+        time: extracted.time || '',
+        location: extracted.location || '',
+        description: extracted.description || '',
+        category: extracted.category || 'Cultural',
+        verification: currentUser.type === 'club' && currentUser.verified ? 'Official' : 'Student Posted',
         eligibility: 'All Students'
       });
       
       setUploadMethod('manual');
+      alert('Flyer scanned successfully! Please review the auto-filled details below.');
     } catch (error) {
       console.error('Scan error:', error);
-      alert('Failed to scan flyer. Please try manual entry.');
+      alert('Error: Failed to scan flyer. The image may be unclear or not contain readable text. Please try manual entry.');
+      setUploadedImage(null);
+      setUploadedImageData(null);
     } finally {
       setScanning(false);
     }
   };
 
   const handleSubmitEvent = () => {
+    if (!currentUser) {
+      alert('Please log in to create events');
+      return;
+    }
+    
     if (!newEvent.title || !newEvent.date) {
       alert('Title and date are required');
       return;
@@ -151,10 +284,14 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
     const event = {
       ...newEvent,
       id: Date.now(),
-      flags: 0
+      flags: 0,
+      createdBy: currentUser.username,
+      accountType: currentUser.type,
+      flyerUrl: uploadedImageData
     };
     
     setEvents([...events, event]);
+    
     setNewEvent({
       title: '',
       date: '',
@@ -165,7 +302,26 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
       eligibility: 'All Students',
       description: ''
     });
+    setUploadedImage(null);
+    setUploadedImageData(null);
     setShowUpload(false);
+    
+    alert('Event created successfully!');
+  };
+
+  const handleDeleteEvent = (eventId) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+    
+    if (!currentUser || event.createdBy !== currentUser.username) {
+      alert('You can only delete events you created');
+      return;
+    }
+    
+    if (window.confirm('Are you sure you want to delete this event?')) {
+      setEvents(events.filter(e => e.id !== eventId));
+      setSelectedEvent(null);
+    }
   };
 
   const toggleFilter = (type, value) => {
@@ -230,7 +386,6 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
@@ -238,7 +393,31 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
               <h1 className="text-2xl font-bold text-slate-800">Campus Events</h1>
               <p className="text-sm text-slate-600">Discover events happening around campus</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
+              {currentUser ? (
+                <>
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg">
+                    <Users className="w-4 h-4" />
+                    <span className="text-sm font-medium">{currentUser.username}</span>
+                    {currentUser.verified && <Shield className="w-4 h-4 text-green-600" title="Verified Account" />}
+                    <span className="text-xs text-slate-500">({currentUser.type})</span>
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg text-sm transition-colors"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setShowAuth(true)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Login / Sign Up
+                </button>
+              )}
               <button
                 onClick={() => setShowFilters(!showFilters)}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-2 transition-colors"
@@ -246,17 +425,18 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                 <Filter className="w-4 h-4" />
                 Filters
               </button>
-              <button
-                onClick={() => setShowUpload(!showUpload)}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-2 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Add Event
-              </button>
+              {currentUser && (
+                <button
+                  onClick={() => setShowUpload(!showUpload)}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-2 transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  Add Event
+                </button>
+              )}
             </div>
           </div>
           
-          {/* View Toggle */}
           <div className="flex gap-2 mt-4">
             <button
               onClick={() => setView('calendar')}
@@ -282,7 +462,6 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="flex gap-6">
-          {/* Filters Sidebar */}
           {showFilters && (
             <div className="w-64 bg-white rounded-lg shadow-sm p-4 h-fit">
               <h3 className="font-semibold mb-3">Filters</h3>
@@ -318,7 +497,7 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
               </div>
 
               <button
-                onClick={() => setFilters({ categories: [], verification: [], eligibility: [], dateRange: 'all' })}
+                onClick={() => setFilters({ categories: [], verification: [], eligibility: [] })}
                 className="w-full px-3 py-1 text-sm bg-slate-100 hover:bg-slate-200 rounded transition-colors"
               >
                 Clear Filters
@@ -326,7 +505,6 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
             </div>
           )}
 
-          {/* Main Content */}
           <div className="flex-1">
             {view === 'calendar' && (
               <div className="bg-white rounded-lg shadow-sm p-6">
@@ -346,14 +524,15 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                           >
                             <div className="flex items-start justify-between">
                               <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
                                   {getVerificationIcon(event.verification)}
                                   <h4 className="font-semibold">{event.title}</h4>
                                   <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(event.category)}`}>
                                     {event.category}
                                   </span>
+                                  {event.flyerUrl && <FileImage className="w-4 h-4 text-slate-400" title="Has flyer" />}
                                 </div>
-                                <div className="flex items-center gap-4 text-sm text-slate-600">
+                                <div className="flex items-center gap-4 text-sm text-slate-600 flex-wrap">
                                   <span className="flex items-center gap-1">
                                     <Clock className="w-4 h-4" />
                                     {event.time}
@@ -362,8 +541,22 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                                     <MapPin className="w-4 h-4" />
                                     {event.location}
                                   </span>
+                                  <span className="text-xs text-slate-500">
+                                    by {event.createdBy}
+                                  </span>
                                 </div>
                               </div>
+                              {currentUser && event.createdBy === currentUser.username && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteEvent(event.id);
+                                  }}
+                                  className="ml-2 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4 text-red-600" />
+                                </button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -385,16 +578,17 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                       className="p-4 border rounded-lg hover:shadow-md transition-shadow cursor-pointer"
                     >
                       <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             {getVerificationIcon(event.verification)}
                             <h4 className="font-semibold">{event.title}</h4>
                             <span className={`text-xs px-2 py-1 rounded-full ${getCategoryColor(event.category)}`}>
                               {event.category}
                             </span>
+                            {event.flyerUrl && <FileImage className="w-4 h-4 text-slate-400" title="Has flyer" />}
                           </div>
                           <p className="text-sm text-slate-600 mb-2">{event.description}</p>
-                          <div className="flex items-center gap-4 text-sm text-slate-600">
+                          <div className="flex items-center gap-4 text-sm text-slate-600 flex-wrap">
                             <span>{new Date(event.date + 'T00:00:00').toLocaleDateString()}</span>
                             <span className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
@@ -404,8 +598,22 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                               <MapPin className="w-4 h-4" />
                               {event.location}
                             </span>
+                            <span className="text-xs text-slate-500">
+                              by {event.createdBy}
+                            </span>
                           </div>
                         </div>
+                        {currentUser && event.createdBy === currentUser.username && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteEvent(event.id);
+                            }}
+                            className="ml-2 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4 text-red-600" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -432,21 +640,21 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                       <p className="text-sm text-slate-600">Official Events</p>
                     </div>
                     <div className="p-4 bg-purple-50 rounded-lg">
-                      <p className="text-2xl font-bold text-purple-600">{categories.length}</p>
-                      <p className="text-sm text-slate-600">Categories</p>
+                      <p className="text-2xl font-bold text-purple-600">{users.filter(u => u.type === 'club').length}</p>
+                      <p className="text-sm text-slate-600">Clubs</p>
                     </div>
                   </div>
 
                   <h3 className="font-semibold mb-3">Popular Event Times</h3>
                   <div className="space-y-2">
-                    {getPopularTimes().map((time, idx) => (
+                    {getPopularTimes().length > 0 ? getPopularTimes().map((time, idx) => (
                       <div key={idx} className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center font-semibold">
                           {idx + 1}
                         </div>
                         <span className="text-slate-700">{time}</span>
                       </div>
-                    ))}
+                    )) : <p className="text-sm text-slate-500">No time data available yet</p>}
                   </div>
                 </div>
 
@@ -455,7 +663,7 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                   <div className="space-y-2">
                     {categories.map(cat => {
                       const count = events.filter(e => e.category === cat).length;
-                      const percentage = (count / events.length) * 100;
+                      const percentage = events.length > 0 ? (count / events.length) * 100 : 0;
                       return (
                         <div key={cat}>
                           <div className="flex justify-between text-sm mb-1">
@@ -464,7 +672,7 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                           </div>
                           <div className="w-full bg-slate-100 rounded-full h-2">
                             <div
-                              className="bg-indigo-600 h-2 rounded-full"
+                              className="bg-indigo-600 h-2 rounded-full transition-all"
                               style={{ width: `${percentage}%` }}
                             />
                           </div>
@@ -479,13 +687,139 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
         </div>
       </div>
 
-      {/* Upload Modal */}
+      {showAuth && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">{authMode === 'login' ? 'Login' : 'Sign Up'}</h2>
+              <button onClick={() => {
+                setShowAuth(false);
+                setAuthForm({ username: '', password: '', email: '', clubName: '' });
+              }}>
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Account Type</label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        value="user"
+                        checked={accountType === 'user'}
+                        onChange={(e) => setAccountType(e.target.value)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Student</span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        value="club"
+                        checked={accountType === 'club'}
+                        onChange={(e) => setAccountType(e.target.value)}
+                        className="rounded"
+                      />
+                      <span className="text-sm">Club</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Username *</label>
+                <input
+                  type="text"
+                  value={authForm.username}
+                  onChange={(e) => setAuthForm({ ...authForm, username: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Enter username"
+                />
+              </div>
+
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Email *</label>
+                  <input
+                    type="email"
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="Enter email"
+                  />
+                </div>
+              )}
+
+              {authMode === 'signup' && accountType === 'club' && (
+                <div>
+                  <label className="block text-sm font-medium mb-1">Club Name *</label>
+                  <input
+                    type="text"
+                    value={authForm.clubName}
+                    onChange={(e) => setAuthForm({ ...authForm, clubName: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="Enter club name"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Password *</label>
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Enter password"
+                />
+              </div>
+
+              <button
+                onClick={authMode === 'login' ? handleLogin : handleSignup}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+              >
+                {authMode === 'login' ? 'Login' : 'Sign Up'}
+              </button>
+
+              <div className="text-center">
+                <button
+                  onClick={() => {
+                    setAuthMode(authMode === 'login' ? 'signup' : 'login');
+                    setAuthForm({ username: '', password: '', email: '', clubName: '' });
+                  }}
+                  className="text-sm text-indigo-600 hover:text-indigo-700"
+                >
+                  {authMode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Login'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showUpload && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-semibold">Add New Event</h2>
-              <button onClick={() => setShowUpload(false)}>
+              <button onClick={() => {
+                setShowUpload(false);
+                setUploadedImage(null);
+                setUploadedImageData(null);
+                setNewEvent({
+                  title: '',
+                  date: '',
+                  time: '',
+                  location: '',
+                  category: 'Cultural',
+                  verification: 'Student Posted',
+                  eligibility: 'All Students',
+                  description: ''
+                });
+              }}>
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -520,108 +854,118 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                   <p className="text-sm text-slate-600">
                     {scanning ? 'Scanning flyer...' : 'Click to upload a flyer image'}
                   </p>
-                  <p className="text-xs text-slate-500 mt-1">AI will extract event details automatically</p>
+                  <p className="text-xs text-slate-500 mt-1">AI will automatically extract event details</p>
                 </label>
               </div>
             )}
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium mb-1">Event Title *</label>
-                <input
-                  type="text"
-                  value={newEvent.title}
-                  onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="Event name"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Date *</label>
-                  <input
-                    type="date"
-                    value={newEvent.date}
-                    onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {uploadedImage && (
+                <div className="border rounded-lg p-4">
+                  <h3 className="font-semibold mb-2">Uploaded Flyer</h3>
+                  <img src={uploadedImage} alt="Flyer preview" className="w-full rounded-lg" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Time</label>
-                  <input
-                    type="time"
-                    value={newEvent.time}
-                    onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium mb-1">Location</label>
-                <input
-                  type="text"
-                  value={newEvent.location}
-                  onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="Venue or building"
-                />
-              </div>
+              <div className={uploadedImage ? '' : 'md:col-span-2'}>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Event Title *</label>
+                    <input
+                      type="text"
+                      value={newEvent.title}
+                      onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="Event name"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Category</label>
-                  <select
-                    value={newEvent.category}
-                    onChange={(e) => setNewEvent({ ...newEvent, category: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Date *</label>
+                      <input
+                        type="date"
+                        value={newEvent.date}
+                        onChange={(e) => setNewEvent({ ...newEvent, date: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Time</label>
+                      <input
+                        type="time"
+                        value={newEvent.time}
+                        onChange={(e) => setNewEvent({ ...newEvent, time: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Location</label>
+                    <input
+                      type="text"
+                      value={newEvent.location}
+                      onChange={(e) => setNewEvent({ ...newEvent, location: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="Venue or building"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Category</label>
+                      <select
+                        value={newEvent.category}
+                        onChange={(e) => setNewEvent({ ...newEvent, category: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      >
+                        {categories.map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Eligibility</label>
+                      <select
+                        value={newEvent.eligibility}
+                        onChange={(e) => setNewEvent({ ...newEvent, eligibility: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg"
+                      >
+                        {eligibilityOptions.map(opt => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Description</label>
+                    <textarea
+                      value={newEvent.description}
+                      onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      rows="3"
+                      placeholder="Brief description of the event"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleSubmitEvent}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
                   >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Eligibility</label>
-                  <select
-                    value={newEvent.eligibility}
-                    onChange={(e) => setNewEvent({ ...newEvent, eligibility: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    {eligibilityOptions.map(opt => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
+                    Submit Event
+                  </button>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">Description</label>
-                <textarea
-                  value={newEvent.description}
-                  onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  rows="3"
-                  placeholder="Brief description of the event"
-                />
-              </div>
-
-              <button
-                onClick={handleSubmitEvent}
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-              >
-                Submit Event
-              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Event Detail Modal */}
       {selectedEvent && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-lg w-full p-6">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-start mb-4">
               <div className="flex items-center gap-2">
                 {getVerificationIcon(selectedEvent.verification)}
@@ -642,6 +986,13 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
 
               <p className="text-slate-700">{selectedEvent.description}</p>
 
+              {selectedEvent.flyerUrl && (
+                <div className="border rounded-lg p-4">
+                  <h3 className="font-semibold mb-2">Event Flyer</h3>
+                  <img src={selectedEvent.flyerUrl} alt="Event flyer" className="w-full rounded-lg" />
+                </div>
+              )}
+
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-slate-600">
                   <Calendar className="w-4 h-4" />
@@ -659,6 +1010,9 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                   <Users className="w-4 h-4" />
                   {selectedEvent.eligibility}
                 </div>
+                <div className="text-xs text-slate-500 mt-2">
+                  Posted by {selectedEvent.createdBy} ({selectedEvent.accountType})
+                </div>
               </div>
 
               <div className="flex gap-2 pt-4">
@@ -667,6 +1021,7 @@ If any field cannot be determined, use "TBD" for text fields or today's date for
                     setEvents(events.map(e => 
                       e.id === selectedEvent.id ? { ...e, flags: e.flags + 1 } : e
                     ));
+                    alert('Event reported. Thank you for your feedback.');
                     setSelectedEvent(null);
                   }}
                   className="flex-1 py-2 border border-slate-300 hover:bg-slate-50 rounded-lg flex items-center justify-center gap-2 transition-colors"
